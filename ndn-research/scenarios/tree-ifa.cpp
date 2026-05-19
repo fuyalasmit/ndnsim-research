@@ -2,18 +2,21 @@
 #include "ns3/network-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/ndnSIM-module.h"
+#include <fstream>
 
 using namespace ns3;
 
-int
-main(int argc, char* argv[])
+int main(int argc, char* argv[])
 {
-  double simTime = 120.0;
-  double attackStart = 60.0;
+  double simTime    = 600.0;
+  double attackStart = 300.0; // 5 min baseline, 5 min attack = balanced classes
 
   CommandLine cmd;
-  cmd.AddValue("simTime", "Simulation time", simTime);
+  cmd.AddValue("simTime",     "Simulation time in seconds", simTime);
+  cmd.AddValue("attackStart", "Attack start time",          attackStart);
   cmd.Parse(argc, argv);
+
+  system("mkdir -p results");
 
   NodeContainer producers, routers, consumers;
   producers.Create(2);
@@ -38,8 +41,6 @@ main(int argc, char* argv[])
   Ptr<Node> c5 = consumers.Get(4);
   Ptr<Node> c6 = consumers.Get(5);
 
-  system("mkdir -p results");
-
   PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
   p2p.SetChannelAttribute("Delay", StringValue("10ms"));
@@ -59,26 +60,26 @@ main(int argc, char* argv[])
 
   ns3::ndn::StackHelper ndnHelper;
   ndnHelper.SetDefaultRoutes(true);
+  ndnHelper.setCsSize(100);
   ndnHelper.Install(allNodes);
 
   ns3::ndn::GlobalRoutingHelper grHelper;
   grHelper.Install(allNodes);
 
   ns3::ndn::AppHelper producerHelper("ns3::ndn::Producer");
-  producerHelper.SetPrefix("/ndn");
+  producerHelper.SetAttribute("Prefix", StringValue("/ndn"));
   producerHelper.SetAttribute("PayloadSize", StringValue("1024"));
   producerHelper.Install(p1);
   producerHelper.Install(p2);
 
   grHelper.AddOrigins("/ndn", p1);
   grHelper.AddOrigins("/ndn", p2);
-
   ns3::ndn::GlobalRoutingHelper::CalculateRoutes();
 
+  // Legitimate consumers — run entire simulation
   ns3::ndn::AppHelper consumerHelper("ns3::ndn::ConsumerCbr");
-  consumerHelper.SetPrefix("/ndn");
+  consumerHelper.SetAttribute("Prefix", StringValue("/ndn"));
   consumerHelper.SetAttribute("Frequency", StringValue("10"));
-
   consumerHelper.Install(c1);
   consumerHelper.Install(c2);
   consumerHelper.Install(c3);
@@ -86,46 +87,50 @@ main(int argc, char* argv[])
   consumerHelper.Install(c5);
   consumerHelper.Install(c6);
 
-  ns3::ndn::AppHelper attack1("ns3::ndn::ConsumerCbr");
-  attack1.SetPrefix("/ndn/fake/video");
-  attack1.SetAttribute("Frequency", StringValue("40"));
-  attack1.SetAttribute("LifeTime", StringValue("2s"));
-  auto a1 = attack1.Install(c1);
+  // IFA: c1 becomes attacker at attackStart
+  // 4 fake prefixes with different lifetimes matching README spec
+  // frequencies scaled proportionally (40:30:20:10)
+
+  ns3::ndn::AppHelper atk1("ns3::ndn::ConsumerCbr");
+  atk1.SetAttribute("Prefix", StringValue("/ndn/fake/video"));
+  atk1.SetAttribute("Frequency", StringValue("40"));
+  atk1.SetAttribute("LifeTime", StringValue("2s"));
+  auto a1 = atk1.Install(c1);
   a1.Start(Seconds(attackStart));
 
-  ns3::ndn::AppHelper attack2("ns3::ndn::ConsumerCbr");
-  attack2.SetPrefix("/ndn/random-attack");
-  attack2.SetAttribute("Frequency", StringValue("30"));
-  attack2.SetAttribute("LifeTime", StringValue("1500ms"));
-  auto a2 = attack2.Install(c1);
+  ns3::ndn::AppHelper atk2("ns3::ndn::ConsumerCbr");
+  atk2.SetAttribute("Prefix", StringValue("/ndn/random-attack"));
+  atk2.SetAttribute("Frequency", StringValue("30"));
+  atk2.SetAttribute("LifeTime", StringValue("1500ms"));
+  auto a2 = atk2.Install(c1);
   a2.Start(Seconds(attackStart));
 
-  ns3::ndn::AppHelper attack3("ns3::ndn::ConsumerCbr");
-  attack3.SetPrefix("/ndn/fake/image");
-  attack3.SetAttribute("Frequency", StringValue("20"));
-  attack3.SetAttribute("LifeTime", StringValue("1s"));
-  auto a3 = attack3.Install(c1);
+  ns3::ndn::AppHelper atk3("ns3::ndn::ConsumerCbr");
+  atk3.SetAttribute("Prefix", StringValue("/ndn/fake/image"));
+  atk3.SetAttribute("Frequency", StringValue("20"));
+  atk3.SetAttribute("LifeTime", StringValue("1s"));
+  auto a3 = atk3.Install(c1);
   a3.Start(Seconds(attackStart));
 
-  ns3::ndn::AppHelper attack4("ns3::ndn::ConsumerCbr");
-  attack4.SetPrefix("/ndn/random-attack-2");
-  attack4.SetAttribute("Frequency", StringValue("10"));
-  attack4.SetAttribute("LifeTime", StringValue("4s"));
-  auto a4 = attack4.Install(c1);
+  ns3::ndn::AppHelper atk4("ns3::ndn::ConsumerCbr");
+  atk4.SetAttribute("Prefix", StringValue("/ndn/random-attack-2"));
+  atk4.SetAttribute("Frequency", StringValue("10"));
+  atk4.SetAttribute("LifeTime", StringValue("4s"));
+  auto a4 = atk4.Install(c1);
   a4.Start(Seconds(attackStart));
 
-  ns3::ndn::L3RateTracer::InstallAll(
-      "results/tree-ifa-rate-trace.txt", Seconds(1));
+  ns3::ndn::L3RateTracer::InstallAll("results/tree-ifa-rate-trace.txt", Seconds(1.0));
+  ns3::ndn::CsTracer::InstallAll("results/tree-ifa-cs-trace.txt", Seconds(1.0));
+  ns3::ndn::AppDelayTracer::InstallAll("results/tree-ifa-app-delays.txt");
 
-  ns3::ndn::CsTracer::InstallAll(
-      "results/tree-ifa-cs-trace.txt", Seconds(1));
-
-  ns3::ndn::AppDelayTracer::InstallAll(
-      "results/tree-ifa-app-delays.txt");
+  std::ofstream gt("results/tree-ifa-ground-truth.csv");
+  gt << "time,label\n";
+  for (double t = 0; t < simTime; t += 1.0)
+    gt << t << "," << (t < attackStart ? "normal" : "ifa") << "\n";
+  gt.close();
 
   Simulator::Stop(Seconds(simTime));
   Simulator::Run();
   Simulator::Destroy();
-
   return 0;
 }
