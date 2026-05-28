@@ -82,9 +82,12 @@ int main(int argc, char* argv[])
   grHelper.AddOrigins("/ndn", p2);
   ns3::ndn::GlobalRoutingHelper::CalculateRoutes();
 
-  ns3::ndn::AppHelper consumerHelper("ns3::ndn::ConsumerCbr");
+  ns3::ndn::AppHelper consumerHelper("ns3::ndn::ConsumerZipfMandelbrot");
   consumerHelper.SetAttribute("Prefix", StringValue("/ndn"));
   consumerHelper.SetAttribute("Frequency", StringValue("10"));
+  consumerHelper.SetAttribute("NumberOfContents", StringValue("100"));
+  consumerHelper.SetAttribute("q", StringValue("0.0"));
+  consumerHelper.SetAttribute("s", StringValue("0.7"));
   consumerHelper.Install(c1);
   consumerHelper.Install(c2);
   consumerHelper.Install(c3);

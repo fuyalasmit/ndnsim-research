@@ -2,6 +2,7 @@
 #include "ns3/network-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/ndnSIM-module.h"
+#include "blackhole-producer.hpp"
 #include <fstream>
 
 using namespace ns3;
@@ -80,6 +81,15 @@ int main(int argc, char* argv[])
 
   grHelper.AddOrigins("/ndn", p1);
   grHelper.AddOrigins("/ndn", p2);
+
+  // Non-responding producer for /evil attack prefix
+  ns3::ndn::AppHelper blackhole("ns3::ndn::BlackholeProducer");
+  blackhole.SetAttribute("Prefix", StringValue("/evil"));
+  blackhole.Install(p1);
+  blackhole.Install(p2);
+  grHelper.AddOrigins("/evil", p1);
+  grHelper.AddOrigins("/evil", p2);
+
   ns3::ndn::GlobalRoutingHelper::CalculateRoutes();
 
   ns3::ndn::AppHelper consumerHelper("ns3::ndn::ConsumerCbr");
@@ -94,28 +104,28 @@ int main(int argc, char* argv[])
 
   // IFA from c1 after attackStart
   ns3::ndn::AppHelper atk1("ns3::ndn::ConsumerCbr");
-  atk1.SetAttribute("Prefix", StringValue("/ndn/fake/video"));
+  atk1.SetAttribute("Prefix", StringValue("/evil/fake/video"));
   atk1.SetAttribute("Frequency", StringValue("40"));
   atk1.SetAttribute("LifeTime", StringValue("2s"));
   auto a1 = atk1.Install(c1);
   a1.Start(Seconds(attackStart));
 
   ns3::ndn::AppHelper atk2("ns3::ndn::ConsumerCbr");
-  atk2.SetAttribute("Prefix", StringValue("/ndn/random-attack"));
+  atk2.SetAttribute("Prefix", StringValue("/evil/random-attack"));
   atk2.SetAttribute("Frequency", StringValue("30"));
   atk2.SetAttribute("LifeTime", StringValue("1500ms"));
   auto a2 = atk2.Install(c1);
   a2.Start(Seconds(attackStart));
 
   ns3::ndn::AppHelper atk3("ns3::ndn::ConsumerCbr");
-  atk3.SetAttribute("Prefix", StringValue("/ndn/fake/image"));
+  atk3.SetAttribute("Prefix", StringValue("/evil/fake/image"));
   atk3.SetAttribute("Frequency", StringValue("20"));
   atk3.SetAttribute("LifeTime", StringValue("1s"));
   auto a3 = atk3.Install(c1);
   a3.Start(Seconds(attackStart));
 
   ns3::ndn::AppHelper atk4("ns3::ndn::ConsumerCbr");
-  atk4.SetAttribute("Prefix", StringValue("/ndn/random-attack-2"));
+  atk4.SetAttribute("Prefix", StringValue("/evil/random-attack-2"));
   atk4.SetAttribute("Frequency", StringValue("10"));
   atk4.SetAttribute("LifeTime", StringValue("4s"));
   auto a4 = atk4.Install(c1);
